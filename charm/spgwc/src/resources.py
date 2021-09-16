@@ -144,176 +144,73 @@ class SpgwcResources:
         logger.info("Deleted additional Kubernetes resources")
 
     @property
-    def add_mme_init_containers(self) -> dict:
-        """Returns the addtional init_containers required for mme"""
+    def add_spgwc_init_containers(self) -> dict:
+        """Returns the addtional init_container required for spgwc"""
         return [
             kubernetes.client.V1Container(
-                name  = "mme-load-sctp-module",
-                command = ["bash", "-xc"],
-                args = ["if chroot /mnt/host-rootfs modinfo nf_conntrack_proto_sctp > /dev/null 2>&1; then chroot /mnt/host-rootfs modprobe nf_conntrack_proto_sctp; fi; chroot /mnt/host-rootfs modprobe tipc"],
-                image = "docker.io/omecproject/pod-init:1.0.0",
+                name  = "spgwc-dep-check",
+                image = "quay.io/stackanetes/kubernetes-entrypoint:v0.3.1",
                 image_pull_policy = "IfNotPresent",
                 security_context = kubernetes.client.V1SecurityContext(
-                    privileged = True,
+                    allow_privilege_escalation = False,
+                    read_only_root_filesystem = False,
                     run_as_user = 0,
                 ),
-                volume_mounts = self._sctp_module_volume_mounts,
-            ),
-            kubernetes.client.V1Container(
-                name  = "mme-init",
-                command = ["/opt/mme/scripts/mme-init.sh"],
-                image = "amitinfo2k/nucleus-mme:9f86f87",
-                image_pull_policy = "IfNotPresent",
                 env = [
                     kubernetes.client.V1EnvVar(
-                        name = "POD_IP",
+                        name = "NAMESPACE",
                         value_from = kubernetes.client.V1EnvVarSource(
-                            field_ref = kubernetes.client.V1ObjectFieldSelector(field_path="status.podIP"),
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(
+                                field_path = "metadata.namespace",
+                                api_version = "v1"
+                            ),
                         ),
-
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "POD_NAME",
+                        value_from = kubernetes.client.V1EnvVarSource(
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(
+                                field_path = "metadata.name",
+                                api_version = "v1"
+                            ),
+                        ),
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "PATH",
+                        value = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/",
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "COMMAND",
+                        value = "echo done",
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "DEPENDENCY_POD_JSON",
+                        value = '[{"labels": {"app.kubernetes.io/name": "mme"}, "requireSameNode": false}]',
                     ),
                 ],
-                volume_mounts = self._mme_init_volume_mounts,
+                command = ["kubernetes-entrypoint"],
             ),
         ]
 
     @property
-    def mme_volumes(self) -> dict:
-        """Returns the additional volumes required by the mme"""
+    def spgwc_add_env(self) -> dict:
+        """ TODO: Need to add MEM_LIMIT ENV""" 
+        """Returns the additional env for the spgwc containers"""
         return [
-            kubernetes.client.V1Volume(
-                name="scripts",
-                config_map=kubernetes.client.V1ConfigMapVolumeSource(
-                    name="mme-scripts",
-                    default_mode=493,
+            kubernetes.client.V1EnvVar(
+                name = "MME_ADDR",
+                value_from = kubernetes.client.V1EnvVarSource(
+                    config_map_key_ref = kubernetes.client.V1ConfigMapKeySelector(
+                        key = "IP",
+                        name = "mme-ip",
+                    ),
                 ),
             ),
-            kubernetes.client.V1Volume(
-                name="configs",
-                config_map=kubernetes.client.V1ConfigMapVolumeSource(
-                    name="mme-configs",
-                    default_mode=420,
+            kubernetes.client.V1EnvVar(
+                name = "POD_IP",
+                value_from = kubernetes.client.V1EnvVarSource(
+                    field_ref = kubernetes.client.V1ObjectFieldSelector(field_path="status.podIP"),
                 ),
-            ),
-            kubernetes.client.V1Volume(
-                name="shared-data",
-                empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
-            ),
-            kubernetes.client.V1Volume(
-                name="shared-app",
-                empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
-            ),
-            kubernetes.client.V1Volume(
-                name="host-rootfs",
-                host_path=kubernetes.client.V1HostPathVolumeSource(path="/"),
-            ),
-        ]
-
-    @property
-    def mme_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the mme-app containers"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/opt/mme/config/shared",
-                name="shared-data",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="shared-app",
-                mount_path="/tmp",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="scripts",
-                mount_path="/opt/mme/scripts",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="configs",
-                mount_path="/opt/mme/config",
-            ),
-        ]
-
-    @property
-    def _sctp_module_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the sctp-module init_container"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/mnt/host-rootfs",
-                name="host-rootfs",
-            ),
-        ]
-
-    @property
-    def _mme_init_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the mme-init init_container"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/opt/mme/config/shared",
-                name="shared-data",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="scripts",
-                mount_path="/opt/mme/scripts",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="configs",
-                mount_path="/opt/mme/config",
-            ),
-        ]
-
-    @property
-    def s1ap_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the s1ap containers"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/opt/mme/config/shared",
-                name="shared-data",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="shared-app",
-                mount_path="/tmp",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="scripts",
-                mount_path="/opt/mme/scripts",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="configs",
-                mount_path="/opt/mme/config",
-            ),
-        ]
-
-    @property
-    def s6a_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the s6a containers"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/opt/mme/config/shared",
-                name="shared-data",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="shared-app",
-                mount_path="/tmp",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="scripts",
-                mount_path="/opt/mme/scripts",
-            ),
-        ]
-
-    @property
-    def s11_volume_mounts(self) -> dict:
-        """Returns the additional volume mounts for the s11 containers"""
-        return [
-            kubernetes.client.V1VolumeMount(
-                mount_path="/opt/mme/config/shared",
-                name="shared-data",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="shared-app",
-                mount_path="/tmp",
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="scripts",
-                mount_path="/opt/mme/scripts",
             ),
         ]
 

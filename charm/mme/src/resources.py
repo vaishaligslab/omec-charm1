@@ -148,6 +148,36 @@ class MmeResources:
         """Returns the addtional init_containers required for mme"""
         return [
             kubernetes.client.V1Container(
+                name  = "mme-configmap-mme-ip",
+                command = ["/opt/mme/scripts/mme-ip.sh"],
+                image = "docker.io/omecproject/pod-init:1.0.0",
+                image_pull_policy = "IfNotPresent",
+                volume_mounts = [
+                    kubernetes.client.V1VolumeMount(
+                        mount_path = "scripts",
+                        sub_path = "mme-ip.sh",
+                        name = "scripts",
+                    ),
+                ],
+                env = [
+                    kubernetes.client.V1EnvVar(
+                        name = "NAMESPACE",
+                        value_from = kubernetes.client.V1EnvVarSource(
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(
+                                field_path = "metadata.namespace",
+                                api_version = "v1"
+                            ),
+                        ),
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "POD_IP",
+                        value_from = kubernetes.client.V1EnvVarSource(
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(field_path="status.podIP"),
+                        ),
+                    ),
+                ],
+            ),
+            kubernetes.client.V1Container(
                 name  = "mme-load-sctp-module",
                 command = ["bash", "-xc"],
                 args = ["if chroot /mnt/host-rootfs modinfo nf_conntrack_proto_sctp > /dev/null 2>&1; then chroot /mnt/host-rootfs modprobe nf_conntrack_proto_sctp; fi; chroot /mnt/host-rootfs modprobe tipc"],
@@ -160,6 +190,49 @@ class MmeResources:
                 volume_mounts = self._sctp_module_volume_mounts,
             ),
             kubernetes.client.V1Container(
+                name  = "mme-dep-check",
+                image = "quay.io/stackanetes/kubernetes-entrypoint:v0.3.1",
+                image_pull_policy = "IfNotPresent",
+                security_context = kubernetes.client.V1SecurityContext(
+                    allow_privilege_escalation = False,
+                    read_only_root_filesystem = False,
+                    run_as_user = 0,
+                ),
+                env = [
+                    kubernetes.client.V1EnvVar(
+                        name = "NAMESPACE",
+                        value_from = kubernetes.client.V1EnvVarSource(
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(
+                                field_path = "metadata.namespace",
+                                api_version = "v1"
+                            ),
+                        ),
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "POD_NAME",
+                        value_from = kubernetes.client.V1EnvVarSource(
+                            field_ref = kubernetes.client.V1ObjectFieldSelector(
+                                field_path = "metadata.name",
+                                api_version = "v1"
+                            ),
+                        ),
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "PATH",
+                        value = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/",
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "COMMAND",
+                        value = "echo done",
+                    ),
+                    kubernetes.client.V1EnvVar(
+                        name = "DEPENDENCY_POD_JSON",
+                        value = '[{"labels": {"app.kubernetes.io/name": "hss"}, "requireSameNode": false}]',
+                    ),
+                ],
+                command = ["kubernetes-entrypoint"],
+            ),
+            kubernetes.client.V1Container(
                 name  = "mme-init",
                 command = ["/opt/mme/scripts/mme-init.sh"],
                 image = "amitinfo2k/nucleus-mme:9f86f87",
@@ -170,7 +243,6 @@ class MmeResources:
                         value_from = kubernetes.client.V1EnvVarSource(
                             field_ref = kubernetes.client.V1ObjectFieldSelector(field_path="status.podIP"),
                         ),
-
                     ),
                 ],
                 volume_mounts = self._mme_init_volume_mounts,
@@ -481,6 +553,20 @@ class MmeResources:
                         },
                     ),
                     data=dict_config,
+                ),
+            },
+            {
+                "namespace": self.namespace,
+                "body": kubernetes.client.V1ConfigMap(
+                    api_version="v1",
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        namespace=self.namespace,
+                        name="mme-ip",
+                        labels={
+                            "app.kubernetes.io/name": self.app.name,
+                            "app": "spgwc",
+                        },
+                    ),
                 ),
             }
         ]

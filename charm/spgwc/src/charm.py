@@ -43,18 +43,10 @@ class SpgwcCharm(CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.fortune_action, self._on_fortune_action)
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.remove, self._on_remove)
         self._stored.set_default(things=[])
 
     def _on_spgwc_pebble_ready(self, event):
-        """Define and start a workload using the Pebble API.
-
-        TEMPLATE-TODO: change this example to suit your needs.
-        You'll need to specify the right entrypoint and environment
-        configuration for your specific workload. Tip: you can see the
-        standard entrypoint of an existing container using docker inspect
-
-        Learn more about Pebble layers at https://github.com/canonical/pebble
-        """
         # Get a reference the container attribute on the PebbleReadyEvent
         container = event.workload
         # Define an initial Pebble layer configuration
@@ -67,14 +59,13 @@ class SpgwcCharm(CharmBase):
                     "summary": "spgwc",
                     "command": """/bin/bash -xc "/opt/cp/scripts/spgwc-run.sh" """,
                     "startup": "enabled",
-                    "environment": {"thing": self.model.config["thing"]},
                 }
             },
         }
         scriptPath = "/opt/cp/scripts/"
-        scriptPath1 = "/etc/cp/config/"
+        configPath = "/etc/cp/config/"
         self._push_file_to_container(container, "src/files/script/*.*", scriptPath, 0o755)
-        self._push_file_to_container(container, "src/files/config/*.*", scriptPath1, 0o755)
+        self._push_file_to_container(container, "src/files/config/*.*", configPath, 0o755)
 
         # Add intial Pebble config layer using the Pebble API
         container.add_layer("spgwc", pebble_layer, combine=True)
@@ -84,20 +75,65 @@ class SpgwcCharm(CharmBase):
         # https://juju.is/docs/sdk/constructs#heading--statuses
         self.unit.status = ActiveStatus()
 
-    def _on_config_changed(self, _):
-        """Just an example to show how to deal with changed configuration.
+    def _on_config_changed(self, event) -> None:
+        # Defer the config-changed event if we do not have sufficient privileges
+        if not self._k8s_auth():
+            event.defer()
+            return
 
-        TEMPLATE-TODO: change this example to suit your needs.
-        If you don't need to handle config, you can remove this method,
-        the hook created in __init__.py for it, the corresponding test,
-        and the config.py file.
+        # Default StatefulSet needs patching for inicontainers and extra volumes. Ensure that
+        # the StatefulSet is patched on each invocation.
+        if not self._statefulset_patched:
+            self._patch_stateful_set()
+            self.unit.status = MaintenanceStatus("waiting for changes to apply")
 
-        Learn more about config at https://juju.is/docs/sdk/config
-        """
-        current = self.config["thing"]
-        if current not in self._stored.things:
-            logger.debug("found a new thing: %r", current)
-            self._stored.things.append(current)
+        try:
+            # Configure and start the mme interface
+            self._config_mme()
+            # Configure and start the s1ap interface
+            self._config_s1ap()
+            # Configure and start the s6a interface
+            self._config_s6a()
+            # Configure and start the s11 interface
+            self._config_s11()
+        except ConnectionError:
+            logger.info("pebble socket not available, deferring config-changed")
+            event.defer()
+            return
+
+        self.unit.status = ActiveStatus()
+
+    #TODO: Add configmap mme_addr env configmap : mme-ip condition
+    @property
+    def _statefulset_patched(self) -> bool:
+        """Slightly naive check to see if the StatefulSet has already been patched"""
+        # Get an API client
+        apps_api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
+        # Get the StatefulSet for the deployed application
+        s = apps_api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
+        # Create a volume mount that we expect to be present after patching the StatefulSet
+        expected = kubernetes.client.V1VolumeMount(mount_path="/opt/mme/config/shared", name="shared-data")
+        return expected in s.spec.template.spec.containers[1].volume_mounts
+
+    def _patch_stateful_set(self) -> None:
+        """Patch the StatefulSet to include specific ServiceAccount and Secret mounts"""
+        self.unit.status = MaintenanceStatus("patching StatefulSet for additional k8s permissions")
+        # Get an API client
+        api = kubernetes.client.AppsV1Api(kubernetes.client.ApiClient())
+        r = resources.SpgwcResources(self)
+        # Read the StatefulSet we're deployed into
+        s = api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
+        # Add the required volume mounts to the mme container spec
+        s.spec.template.spec.containers[1].env.extend(r.spgwc_add_env)
+        # Add additional init containers required for mme
+        s.spec.template.spec.init_containers.extend(r.add_spgwc_init_containers)
+        # Add resource limit to each container
+        #containers = s.spec.template.spec.containers
+        #r.add_container_resource_limit(containers)
+
+        # Patch the StatefulSet with our modified object
+        api.patch_namespaced_stateful_set(name=self.app.name, namespace=self.namespace, body=s)
+        logger.info("Patched StatefulSet to include additional volumes and mounts")
 
     def _on_fortune_action(self, event):
         """Just an example to show how to receive actions.
@@ -175,7 +211,7 @@ class SpgwcCharm(CharmBase):
     def pod_ip(self) -> Optional[IPv4Address]:
         return IPv4Address(check_output(["unit-get", "private-address"]).decode().strip())
 
-    def _on_install(self, _):
+    def _on_install(self, event: InstallEvent) -> None:
         """Event handler for InstallEvent during which we will update the K8s service."""
         
         """Handle the install event, create Kubernetes resources"""
@@ -186,6 +222,16 @@ class SpgwcCharm(CharmBase):
         # Create the Kubernetes resources needed for the spgwc
         r = resources.SpgwcResources(self)
         r.apply()
+
+    def _on_remove(self, event: RemoveEvent) -> None:
+        """Cleanup Kubernetes resources"""
+        # Authenticate with the Kubernetes API
+        if not self._k8s_auth():
+            event.defer()
+            return
+        # Remove created Kubernetes resources
+        r = resources.SpgwcResources(self)
+        r.delete()
 
 
     '''def _on_upgrade_charm(self, _):

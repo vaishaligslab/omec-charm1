@@ -30,7 +30,7 @@ EOF
 kubectl patch -n $NAMESPACE configmap mme-ip --patch "$(cat patch.json)"
 
 # Update and restart SPGWC if it is deployed
-kubectl get po -n $NAMESPACE --selector app=spgwc | grep Running -q
+kubectl get po -n $NAMESPACE --selector app.kubernetes.io/name=spgwc | grep Running -q
 if [ $? -eq 0 ]; then
     kubectl rollout restart -n $NAMESPACE statefulset/spgwc
 fi
