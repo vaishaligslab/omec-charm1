@@ -75,7 +75,9 @@ class HssCharm(CharmBase):
 
         container = self.unit.get_container("hss")
         scriptPath = "/etc/hss/conf/"
-        self._push_file_to_container(container, "src/files/*.*", scriptPath, 0o755)
+        self._push_file_to_container(container, "src/files/*.conf", scriptPath, 0o755)
+        self._push_file_to_container(container, "src/files/*.json", scriptPath, 0o755)
+        self._push_file_to_container(container, "src/files/*.sh", "/bin/", 0o755)
 
         # Add intial Pebble config layer using the Pebble API
         container.add_layer("hss", pebble_layer, combine=True)
@@ -125,6 +127,11 @@ class HssCharm(CharmBase):
 
     def _patch_k8s_service(self):
         """Fix the Kubernetes service that was setup by Juju with correct port numbers."""
+        if self.config['s6aPort']:
+                 self._s6a_port = self.config['s6aPort']
+        if self.config['promExporterPort']:
+                 self._prometheus_port = self.config['promExporterPort']
+
         if self.unit.is_leader():
             service_ports = [
                 (f"s6a", self._s6a_port, self._s6a_port),

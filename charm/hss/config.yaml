@@ -8,6 +8,14 @@
 # Learn more about config at: https://juju.is/docs/sdk/config
 
 options:
+  s6aPort:
+    default: 3868
+    description: S6A Port to be used
+    type: int 
+  promExporterPort:
+    default: 9080
+    description: Prometheus Port to be used
+    type: int 
   thing:
     default: 🎁
     description: A thing used by the charm.
