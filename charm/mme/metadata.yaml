@@ -1,0 +1,29 @@
+# Copyright 2021 charmjuju
+# See LICENSE file for licensing details.
+
+# For a complete list of supported options, see:
+# https://discourse.charmhub.io/t/charm-metadata-v2/3674/15
+name: mme
+display-name: |
+  mme
+description: |
+  Charm to operate and operate MME.
+summary: |
+  Charm to operate and operate MME.
+
+# MME containers for each interface 
+containers:
+  mme:
+    resource: mme-image
+  s1ap:
+    resource: mme-image
+  s6a:
+    resource: mme-image
+  s11:
+    resource: mme-image
+
+# MME image resource
+resources:
+  mme-image:
+    type: oci-image
+    description: OCI image for mme
