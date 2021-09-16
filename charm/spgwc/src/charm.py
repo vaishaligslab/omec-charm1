@@ -11,13 +11,22 @@ develop a new k8s charm using the Operator Framework:
 
     https://discourse.charmhub.io/t/4208
 """
-
+from files import *
 import logging
-
-from ops.charm import CharmBase
+import os
+from typing import Optional
+from subprocess import check_output
+from ipaddress import IPv4Address
+import datetime
+from cryptography import x509
+import glob
+from ops.charm import CharmBase, InstallEvent, RemoveEvent
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from kubernetes import kubernetes
+from pathlib import Path
+import resources
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +35,7 @@ class SpgwcCharm(CharmBase):
     """Charm the service."""
 
     _stored = StoredState()
+    _authed = False
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -127,6 +137,43 @@ class SpgwcCharm(CharmBase):
                 logger.error("Unable to patch the Kubernetes service: %s", str(e))
             else:
                 logger.info("Successfully patched the Kubernetes service")'''
+    def _k8s_auth(self) -> bool:
+        """Authenticate to kubernetes."""
+        if self._authed:
+            return True
+        # Remove os.environ.update when lp:1892255 is FIX_RELEASED.
+        os.environ.update(
+            dict(
+                e.split("=")
+                for e in Path("/proc/1/environ").read_text().split("\x00")
+                if "KUBERNETES_SERVICE" in e
+            )
+        )
+        # Authenticate against the Kubernetes API using a mounted ServiceAccount token
+        kubernetes.config.load_incluster_config()
+        # Test the service account we've got for sufficient perms
+        auth_api = kubernetes.client.RbacAuthorizationV1Api(kubernetes.client.ApiClient())
+
+        try:
+            auth_api.list_cluster_role()
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 403:
+                # If we can't read a cluster role, we don't have enough permissions
+                self.unit.status = BlockedStatus("Run juju trust on this application to continue")
+                return False
+            else:
+                raise e
+
+        self._authed = True
+        return True
+    @property
+    def namespace(self) -> str:
+        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
+            return f.read().strip()
+
+    @property
+    def pod_ip(self) -> Optional[IPv4Address]:
+        return IPv4Address(check_output(["unit-get", "private-address"]).decode().strip())
 
     def _on_install(self, _):
         """Event handler for InstallEvent during which we will update the K8s service."""
@@ -136,8 +183,8 @@ class SpgwcCharm(CharmBase):
             event.defer()
             return
         self.unit.status = MaintenanceStatus("creating k8s resources")
-        # Create the Kubernetes resources needed for the mme
-        r = resources.SpgwcCharm(self)
+        # Create the Kubernetes resources needed for the spgwc
+        r = resources.SpgwcResources(self)
         r.apply()
 
 
