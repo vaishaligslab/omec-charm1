@@ -1,0 +1,24 @@
+FROM amitinfo2k/c3po-hss:master-deaea91
+COPY oai_db.cql /opt/c3po/hssdb/oai_db.cql
+COPY data_provisioning_users.sh /bin/
+COPY data_provisioning_mme.sh /bin/
+#COPY make_certs.sh /opt/c3po/hss/conf/
+COPY Cass_Provisioning.sh hss-run.sh ./bin/
+#COPY acl.conf hss.json hss.conf oss.json make_certs.sh /opt/c3po/hss/conf/
+#WORKDIR /bin/
+#RUN chmod 777 /bin/a.sh /bin/abc.sh
+RUN chmod 777 /bin/data_provisioning_users.sh /bin/data_provisioning_mme.sh /bin/Cass_Provisioning.sh /bin/hss-run.sh /bin/make_certs.sh
+COPY abc.cql /tmp/abc.cql
+RUN chmod +x /opt/c3po/hssdb/oai_db.cql /bin/data_provisioning_users.sh /bin/data_provisioning_mme.sh
+RUN apt-get update && apt-get install -y wget python
+RUN wget https://downloads.datastax.com/enterprise/cqlsh-astra.tar.gz
+RUN tar -xzvf cqlsh-astra.tar.gz
+#RUN cd /db_docs/
+#RUN ./data_provisioning_mme.sh
+WORKDIR /
+ENV PATH="/cqlsh-astra/bin/::${PATH}"
+#RUN ./cqlsh-astra/bin/cqlsh cassandra-k8s-endpoints 9042 -f /tmp/abc.cql
+#RUN cqlsh -f /opt/c3po/hssdb/oai_db.cql
+#RUN cqlsh 10.1.222.39 9042 -f /opt/c3po/hssdb/oai_db.cql
+#CMD ["./cqlsh-astra/bin/cqlsh cassandra-k8s 9042 -f /tmp/abc.cql"]
+CMD ["/bin/bash"]
