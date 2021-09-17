@@ -2,7 +2,7 @@ SHELL = bash -o pipefail
 
 .PHONY: build
 
-build: build-hss build-mme
+build: build-hss build-mme build-spgwc
 
 build-hss:
 	echo "bundling hss charm"
@@ -10,8 +10,11 @@ build-hss:
 build-mme:
 	echo "bundling mme charm"
 	cd charm/mme && charmcraft pack -v
+build-spgwc:
+	echo "bundling spgwc charm"
+	cd charm/spgwc && charmcraft pack -v
 
-deploy: deploy-hss deploy-mme
+deploy: deploy-hss deploy-mme deploy-spgwc
 
 deploy-hss:
 	juju add-model development
@@ -21,11 +24,15 @@ deploy-hss:
 deploy-mme:
 	echo "deploying mme charm"
 	cd charm/mme && juju deploy ./mme_ubuntu-20.04-amd64.charm --resource mme-image=amitinfo2k/nucleus-mme:9f86f87
+deploy-spgwc:
+	echo "deploying spgwc charm"
+	cd charm/spgwc && juju deploy juju deploy ./spgwc_ubuntu-20.04-amd64.charm --resource spgwc-image=amitinfo2k/ngic-cp:1.9.0
 
 cleanup:
+	juju remove-application spgwc
 	juju remove-application mme
 	juju remove-application hss
 	juju remove-application cassandra-k8s
-	juju destroy-model development
+	juju destroy-model development --destroy-storage -y
 
 
