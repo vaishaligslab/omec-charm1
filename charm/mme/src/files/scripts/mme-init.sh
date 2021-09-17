@@ -17,7 +17,10 @@ jq --arg MME_LOCAL_IP "$POD_IP" '.s11.egtp_local_addr=$MME_LOCAL_IP' config.json
 # Set SPGWC address to the config
 # We need to convert service domain name to actual IP address
 # because mme apps does not take domain address - should be fixed in openmme
-SPGWC_ADDR=$(dig +short +search spgwc-s11)
+while [ -z "$SPGWC_ADDR" ]; do
+  SPGWC_ADDR=$(dig +short +search spgwc-s11)
+  sleep 10
+done
 jq --arg SPGWC_ADDR "$SPGWC_ADDR" '.s11.sgw_addr //= $SPGWC_ADDR' config.json > config.tmp && mv config.tmp config.json
 jq --arg SPGWC_ADDR "$SPGWC_ADDR" '.s11.pgw_addr //= $SPGWC_ADDR' config.json > config.tmp && mv config.tmp config.json
 
