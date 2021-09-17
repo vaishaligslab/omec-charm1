@@ -6,14 +6,14 @@
 import unittest
 from unittest.mock import Mock
 
-from charm import SpgwcCharm
+from charm import SpgwuCharm
 from ops.model import ActiveStatus
 from ops.testing import Harness
 
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
-        self.harness = Harness(SpgwcCharm)
+        self.harness = Harness(SpgwuCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
