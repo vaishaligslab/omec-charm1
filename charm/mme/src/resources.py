@@ -154,7 +154,7 @@ class MmeResources:
                 image_pull_policy = "IfNotPresent",
                 volume_mounts = [
                     kubernetes.client.V1VolumeMount(
-                        mount_path = "scripts",
+                        mount_path = "/opt/mme/scripts/mme-ip.sh",
                         sub_path = "mme-ip.sh",
                         name = "scripts",
                     ),

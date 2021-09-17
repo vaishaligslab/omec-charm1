@@ -86,21 +86,6 @@ class SpgwcCharm(CharmBase):
         if not self._statefulset_patched:
             self._patch_stateful_set()
             self.unit.status = MaintenanceStatus("waiting for changes to apply")
-
-        try:
-            # Configure and start the mme interface
-            self._config_mme()
-            # Configure and start the s1ap interface
-            self._config_s1ap()
-            # Configure and start the s6a interface
-            self._config_s6a()
-            # Configure and start the s11 interface
-            self._config_s11()
-        except ConnectionError:
-            logger.info("pebble socket not available, deferring config-changed")
-            event.defer()
-            return
-
         self.unit.status = ActiveStatus()
 
     #TODO: Add configmap mme_addr env configmap : mme-ip condition
