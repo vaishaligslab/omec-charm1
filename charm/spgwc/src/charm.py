@@ -88,7 +88,6 @@ class SpgwcCharm(CharmBase):
             self.unit.status = MaintenanceStatus("waiting for changes to apply")
         self.unit.status = ActiveStatus()
 
-    #TODO: Add configmap mme_addr env configmap : mme-ip condition
     @property
     def _statefulset_patched(self) -> bool:
         """Slightly naive check to see if the StatefulSet has already been patched"""
@@ -97,8 +96,16 @@ class SpgwcCharm(CharmBase):
         # Get the StatefulSet for the deployed application
         s = apps_api.read_namespaced_stateful_set(name=self.app.name, namespace=self.namespace)
         # Create a volume mount that we expect to be present after patching the StatefulSet
-        expected = kubernetes.client.V1VolumeMount(mount_path="/opt/mme/config/shared", name="shared-data")
-        return expected in s.spec.template.spec.containers[1].volume_mounts
+        expected = kubernetes.client.V1EnvVar(
+                name = "MME_ADDR",
+                value_from = kubernetes.client.V1EnvVarSource(
+                    config_map_key_ref = kubernetes.client.V1ConfigMapKeySelector(
+                        key = "IP",
+                        name = "mme-ip",
+                    ),
+                ),
+            )
+        return expected in s.spec.template.spec.containers[1].env
 
     def _patch_stateful_set(self) -> None:
         """Patch the StatefulSet to include specific ServiceAccount and Secret mounts"""
